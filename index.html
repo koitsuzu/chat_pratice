@@ -170,7 +170,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="input-area">
     <div class="text-row">
       <input type="text" id="user-input" placeholder="輸入訊息，或點麥克風語音輸入…"
-             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendText();}">
+             oncompositionstart="isIMEComposing=true"
+             oncompositionend="isIMEComposing=false"
+             onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&!isIMEComposing){event.preventDefault();sendText();}">
       <button class="send-btn" id="send-btn" onclick="sendText()">送出</button>
     </div>
     <div class="voice-area">
@@ -232,6 +234,7 @@ let mediaRecorder = null;
 let audioChunks   = [];
 let isRecording   = false;
 let tidCounter    = 0;
+let isIMEComposing = false;  // 追蹤 IME 輸入法組字狀態
 
 // ════════════════════════════════════════════
 // PANEL SWITCHING
@@ -280,7 +283,7 @@ function startSession() {
 
   showPanel('chat');
   setupMic();
-  sendToGAS('(START_SESSION)', false);  // Agent 先開口，不存 local
+  sendToGAS('(START_SESSION)', true);  // Agent 先開口，也記錄到 Sheet
 }
 
 function endSession() {
@@ -513,7 +516,9 @@ function esc(s) {
 const LS_KEY = 'speaking_agent_sessions';
 
 function saveSession(userMsg, agentMsg) {
-  if (!userMsg || userMsg === '(START_SESSION)') return;
+  if (!userMsg) return;
+  // START_SESSION 也記錄（本地顯示為「開始對話」）
+  if (userMsg === '(START_SESSION)') userMsg = '（開始對話）';
   const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
   if (!all[sessionId]) {
     all[sessionId] = {
