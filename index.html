@@ -319,7 +319,7 @@ async function gasPost(type, payload) {
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (data.error) throw new Error(data.reply || String(data.error));
   return data;
 }
 
@@ -527,6 +527,9 @@ function saveSession(userMsg, agentMsg) {
       lang:     LANG_META[lang].label,
       scenario: SCENE_LABEL[scenario] || scenario,
       level:    LEVEL_LABEL[level]    || level,
+      langKey:     lang,
+      scenarioKey: scenario,
+      levelKey:    level,
       turns:    []
     };
   }
@@ -560,7 +563,10 @@ function showSessionDetail(id) {
   const body = document.getElementById('history-body');
 
   body.innerHTML = `
-    <button class="back-btn" onclick="loadHistory()" style="margin-bottom:16px">← 返回列表</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <button class="back-btn" onclick="loadHistory()">← 返回列表</button>
+      <button class="start-btn" style="width:auto;padding:8px 20px;font-size:14px;border-radius:8px" onclick="resumeSession('${id}')">💬 繼續對話</button>
+    </div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px">${s.time} ｜ ${s.lang} ｜ ${s.scenario} ｜ ${s.level}｜ ${s.turns.length} 輪</div>
     ${s.turns.map((t, i) => `
       <div class="detail-turn">
@@ -573,6 +579,53 @@ function showSessionDetail(id) {
       </div>
     `).join('')}
   `;
+}
+
+// ════════════════════════════════════════════
+// 延續對話
+// ════════════════════════════════════════════
+function resumeSession(id) {
+  const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+  const s = all[id];
+  if (!s) return;
+
+  // 還原 session 狀態
+  sessionId = s.id;
+  lang     = s.langKey     || (s.lang && s.lang.includes('日文') ? 'ja' : 'en');
+  scenario = s.scenarioKey || Object.keys(SCENE_LABEL).find(k => SCENE_LABEL[k] === s.scenario) || 'free';
+  level    = s.levelKey    || Object.keys(LEVEL_LABEL).find(k => LEVEL_LABEL[k] === s.level) || 'intermediate';
+
+  // 重建 API 用的 history
+  history = [];
+  s.turns.forEach(t => {
+    if (t.user && t.user !== '（開始對話）') {
+      history.push({ role: 'user', content: t.user });
+    }
+    if (t.agent) {
+      history.push({ role: 'model', content: t.agent });
+    }
+  });
+
+  // 更新 header 標籤
+  document.getElementById('tag-lang').textContent  = LANG_META[lang].label;
+  document.getElementById('tag-scene').textContent = SCENE_LABEL[scenario] || scenario;
+  document.getElementById('tag-level').textContent = LEVEL_LABEL[level]    || level;
+
+  // 重建聊天訊息
+  const msgContainer = document.getElementById('messages');
+  msgContainer.innerHTML = '';
+  s.turns.forEach(t => {
+    if (t.user && t.user !== '（開始對話）') {
+      appendMsg('user', t.user);
+    }
+    if (t.agent) {
+      appendMsg('agent', t.agent);
+    }
+  });
+
+  // 切到聊天面板
+  showPanel('chat');
+  setupMic();
 }
 </script>
 </body>
