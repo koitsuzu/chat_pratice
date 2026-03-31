@@ -66,6 +66,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .coach-title  { font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #92400e; }
 .coach-box br + br { display: none; }
 
+.voice-select { font-size: 12px; padding: 4px 6px; border-radius: 6px; border: 1px solid #ddd; background: #fff; max-width: 180px; color: #333; }
+.voice-row    { display: flex; align-items: center; gap: 6px; }
+.voice-lbl    { font-size: 12px; color: #888; white-space: nowrap; }
+
 .typing-bubble { padding: 14px 16px !important; }
 .dot          { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c4b5fd; margin: 0 2px; animation: blink 1.2s infinite; }
 .dot:nth-child(2) { animation-delay: .2s; }
@@ -198,6 +202,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         </label>
         <span class="toggle-lbl">自動朗讀</span>
       </div>
+      <div class="voice-row">
+        <span class="voice-lbl">🗣️ 語音</span>
+        <select id="voice-select" class="voice-select"><option>載入中…</option></select>
+      </div>
       <div class="mic-wrap">
         <button class="mic-btn" id="mic-btn" onclick="toggleMic()">🎤</button>
         <span class="mic-label" id="mic-label">點擊錄音</span>
@@ -275,6 +283,8 @@ function pickLang(btn) {
   document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
   lang = btn.dataset.lang;
+  currentVoiceLang = '';  // 強制重新載入語音
+  loadVoices();
 }
 
 document.querySelectorAll('#model-chips .chip').forEach(c => {
@@ -494,9 +504,44 @@ function speakText(text) {
   const u  = new SpeechSynthesisUtterance(text.replace(/<[^>]+>/g, ''));
   u.lang   = LANG_META[lang].ttsLang;
   u.rate   = LANG_META[lang].ttsRate;
+  // 套用選定的語音
+  const sel = document.getElementById('voice-select');
+  if (sel && sel.value) {
+    const voices = window.speechSynthesis.getVoices();
+    const picked = voices.find(v => v.name === sel.value);
+    if (picked) u.voice = picked;
+  }
   window.speechSynthesis.speak(u);
 }
 function stopSpeaking() { window.speechSynthesis.cancel(); }
+
+// 語音清單載入
+let currentVoiceLang = '';
+function loadVoices() {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return;
+  const ttsLang = LANG_META[lang].ttsLang;    // e.g. 'en-US', 'ja-JP'
+  const prefix  = ttsLang.split('-')[0];       // e.g. 'en', 'ja'
+  const sel     = document.getElementById('voice-select');
+  if (!sel) return;
+  // 避免重複更新
+  if (currentVoiceLang === prefix && sel.options.length > 1) return;
+  currentVoiceLang = prefix;
+  const filtered = voices.filter(v => v.lang.startsWith(prefix));
+  sel.innerHTML = '';
+  if (!filtered.length) {
+    sel.innerHTML = '<option>(無可用語音)</option>';
+    return;
+  }
+  filtered.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.name.replace(/Microsoft |Google |Apple /g, '') + (v.localService ? '' : ' ☁️');
+    sel.appendChild(opt);
+  });
+}
+window.speechSynthesis.onvoiceschanged = loadVoices;
+setTimeout(loadVoices, 500);  // fallback
 
 // ════════════════════════════════════════════
 // DOM HELPERS
