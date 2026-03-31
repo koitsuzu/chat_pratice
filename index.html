@@ -342,6 +342,7 @@ function sendText() {
   const input = document.getElementById('user-input');
   const text  = input.value.trim();
   if (!text || isSending) return;
+  warmUpTTS();  // 手機解鎖 TTS
   input.value = '';
   appendMsg('user', text);
   history.push({ role: 'user', content: text });
@@ -426,6 +427,7 @@ function setupMic() {
 function toggleMic() {
   if (!mediaRecorder) { setupMic(); return; }
   if (isRecording) {
+    warmUpTTS();  // 手機解鎖 TTS
     mediaRecorder.stop();
     isRecording = false;
     resetMicUI();
@@ -499,8 +501,22 @@ function blobToBase64(blob) {
 // ════════════════════════════════════════════
 // TTS
 // ════════════════════════════════════════════
+// ── 手機 TTS 解鎖：在使用者互動中發出靜音 utterance 解除瀏覽器限制 ──
+let ttsUnlocked = false;
+function warmUpTTS() {
+  if (ttsUnlocked) return;
+  const u = new SpeechSynthesisUtterance('');
+  u.volume = 0;
+  u.lang   = LANG_META[lang].ttsLang;
+  window.speechSynthesis.speak(u);
+  ttsUnlocked = true;
+}
+
 function speakText(text) {
   stopSpeaking();
+  // iOS Safari 有時會卡在 paused 狀態
+  if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+
   const u  = new SpeechSynthesisUtterance(text.replace(/<[^>]+>/g, ''));
   u.lang   = LANG_META[lang].ttsLang;
   u.rate   = LANG_META[lang].ttsRate;
