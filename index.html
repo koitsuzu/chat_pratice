@@ -524,10 +524,16 @@ function loadVoices() {
   const prefix  = ttsLang.split('-')[0];       // e.g. 'en', 'ja'
   const sel     = document.getElementById('voice-select');
   if (!sel) return;
-  // 避免重複更新
+  // 避免同語言重複更新
   if (currentVoiceLang === prefix && sel.options.length > 1) return;
   currentVoiceLang = prefix;
-  const filtered = voices.filter(v => v.lang.startsWith(prefix));
+
+  // 篩選語音：相容 ja-JP, ja_JP, ja 等格式
+  const filtered = voices.filter(v => {
+    const vLang = (v.lang || '').replace(/_/g, '-').toLowerCase();
+    return vLang.startsWith(prefix.toLowerCase());
+  });
+
   sel.innerHTML = '';
   if (!filtered.length) {
     sel.innerHTML = '<option>(無可用語音)</option>';
@@ -536,12 +542,18 @@ function loadVoices() {
   filtered.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.name;
-    opt.textContent = v.name.replace(/Microsoft |Google |Apple /g, '') + (v.localService ? '' : ' ☁️');
+    const shortName = v.name
+      .replace(/Microsoft /g, '')
+      .replace(/Google /g, '')
+      .replace(/Apple /g, '')
+      .replace(/com\.apple\.speech\.synthesis\.voice\./g, '');
+    opt.textContent = shortName + (v.localService ? '' : ' ☁️');
     sel.appendChild(opt);
   });
 }
 window.speechSynthesis.onvoiceschanged = loadVoices;
-setTimeout(loadVoices, 500);  // fallback
+setTimeout(loadVoices, 300);
+setTimeout(loadVoices, 1000);  // 有些瀏覽器載入較慢
 
 // ════════════════════════════════════════════
 // DOM HELPERS
