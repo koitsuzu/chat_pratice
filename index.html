@@ -531,18 +531,13 @@ function speakText(text) {
     u.lang   = LANG_META[lang].ttsLang;
     u.rate   = LANG_META[lang].ttsRate;
 
-    // 套用選定的語音（找不到時 fallback 到該語言的第一個可用語音）
-    const voices = synth.getVoices();
-    const prefix = LANG_META[lang].ttsLang.split('-')[0].toLowerCase();
+    // 套用選定的語音（「自動」模式不指定，讓瀏覽器用系統預設）
     const sel = document.getElementById('voice-select');
-    let picked = null;
-    if (sel && sel.value) {
-      picked = voices.find(v => v.name === sel.value);
+    if (sel && sel.value && sel.value !== '__auto__') {
+      const voices = synth.getVoices();
+      const picked = voices.find(v => v.name === sel.value);
+      if (picked) u.voice = picked;
     }
-    if (!picked) {
-      picked = voices.find(v => (v.lang || '').replace(/_/g, '-').toLowerCase().startsWith(prefix));
-    }
-    if (picked) u.voice = picked;
 
     synth.speak(u);
 
@@ -580,17 +575,16 @@ function loadVoices() {
   });
 
   sel.innerHTML = '';
-  if (!filtered.length) {
-    sel.innerHTML = '<option>(無可用語音)</option>';
-    return;
-  }
 
-  // 本機語音排前面（手機上雲端語音可能無法使用）
-  filtered.sort((a, b) => {
-    if (a.localService && !b.localService) return -1;
-    if (!a.localService && b.localService) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  // 第一個選項：自動（使用系統預設語音，手機上一定能發聲）
+  const autoOpt = document.createElement('option');
+  autoOpt.value = '__auto__';
+  autoOpt.textContent = '🔊 自動（預設）';
+  sel.appendChild(autoOpt);
+
+  if (!filtered.length) return;
+
+  filtered.sort((a, b) => a.name.localeCompare(b.name));
 
   filtered.forEach(v => {
     const opt = document.createElement('option');
@@ -600,7 +594,7 @@ function loadVoices() {
       .replace(/Google /g, '')
       .replace(/Apple /g, '')
       .replace(/com\.apple\.speech\.synthesis\.voice\./g, '');
-    opt.textContent = shortName + (v.localService ? '' : ' ☁️(需下載)');
+    opt.textContent = shortName;
     sel.appendChild(opt);
   });
 }
