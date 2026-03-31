@@ -61,6 +61,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .msg.user  .bubble { background: #e0f7fa; border-bottom-right-radius: 4px; }
 .tts-btn      { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.4; margin-top: 4px; align-self: flex-start; transition: opacity .15s; }
 .tts-btn:hover { opacity: 1; }
+.resume-btn   { background: #10b981; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.resume-btn:hover { background: #059669; }
 
 .coach-box    { margin-top: 8px; padding: 10px 14px; border-radius: 10px; background: linear-gradient(135deg, #fefce8, #fef9c3); border: 1px solid #fde68a; font-size: 13px; line-height: 1.7; color: #713f12; }
 .coach-title  { font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #92400e; }
@@ -657,7 +659,10 @@ function showSessionDetail(id) {
   const body = document.getElementById('history-body');
 
   body.innerHTML = `
-    <button class="back-btn" onclick="loadHistory()" style="margin-bottom:16px">← 返回列表</button>
+    <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
+      <button class="back-btn" onclick="loadHistory()">← 返回列表</button>
+      <button class="resume-btn" onclick="resumeSession('${s.id}')">▶ 繼續對話</button>
+    </div>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px">${s.time} ｜ ${s.lang} ｜ ${s.scenario} ｜ ${s.level}｜ ${s.turns.length} 輪</div>
     ${s.turns.map((t, i) => `
       <div class="detail-turn">
@@ -670,6 +675,32 @@ function showSessionDetail(id) {
       </div>
     `).join('')}
   `;
+}
+
+function resumeSession(id) {
+  const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+  const s   = all[id];
+  if (!s) return;
+
+  // Restore state
+  sessionId = s.id;
+  history = [];
+  document.getElementById('messages').innerHTML = '';
+
+  // Re-render turns
+  s.turns.forEach(t => {
+    history.push({ role: 'user', content: t.user });
+    if (t.user !== '（開始對話）') appendMsg('user', t.user);
+    
+    // Don't append empty agent msgs
+    if (t.agent && t.agent !== '(no reply)') {
+      history.push({ role: 'model', content: t.agent });
+      appendMsg('agent', t.agent);
+    }
+  });
+
+  // Switch to chat panel
+  showPanel('chat');
 }
 </script>
 </body>
