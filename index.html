@@ -501,34 +501,56 @@ function blobToBase64(blob) {
 // ════════════════════════════════════════════
 // TTS
 // ════════════════════════════════════════════
-// ── 手機 TTS 解鎖：在使用者互動中發出靜音 utterance 解除瀏覽器限制 ──
+// ── 手機 TTS 解鎖 ──
 let ttsUnlocked = false;
 function warmUpTTS() {
   if (ttsUnlocked) return;
-  const u = new SpeechSynthesisUtterance('');
-  u.volume = 0;
-  u.lang   = LANG_META[lang].ttsLang;
-  window.speechSynthesis.speak(u);
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0.01;
+    u.lang   = LANG_META[lang].ttsLang;
+    window.speechSynthesis.speak(u);
+  } catch(e) {}
   ttsUnlocked = true;
 }
 
 function speakText(text) {
-  stopSpeaking();
-  // iOS Safari 有時會卡在 paused 狀態
-  if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+  const synth = window.speechSynthesis;
+  synth.cancel();
 
-  const u  = new SpeechSynthesisUtterance(text.replace(/<[^>]+>/g, ''));
-  u.lang   = LANG_META[lang].ttsLang;
-  u.rate   = LANG_META[lang].ttsRate;
-  // 套用選定的語音
-  const sel = document.getElementById('voice-select');
-  if (sel && sel.value) {
-    const voices = window.speechSynthesis.getVoices();
-    const picked = voices.find(v => v.name === sel.value);
-    if (picked) u.voice = picked;
-  }
-  window.speechSynthesis.speak(u);
+  // iOS 需要 cancel 後等一下再 speak，否則會靜音
+  setTimeout(() => {
+    if (synth.paused) synth.resume();
+
+    const clean = text.replace(/<[^>]+>/g, '').trim();
+    if (!clean) return;
+
+    const u  = new SpeechSynthesisUtterance(clean);
+    u.lang   = LANG_META[lang].ttsLang;
+    u.rate   = LANG_META[lang].ttsRate;
+
+    // 套用選定的語音
+    const sel = document.getElementById('voice-select');
+    if (sel && sel.value) {
+      const voices = synth.getVoices();
+      const picked = voices.find(v => v.name === sel.value);
+      if (picked) u.voice = picked;
+    }
+
+    synth.speak(u);
+
+    // iOS Safari bug: 超過 ~15 秒會卡住，用定時 resume 修正
+    const keepAlive = setInterval(() => {
+      if (!synth.speaking) { clearInterval(keepAlive); return; }
+      synth.pause();
+      synth.resume();
+    }, 10000);
+
+    u.onend = () => clearInterval(keepAlive);
+    u.onerror = () => clearInterval(keepAlive);
+  }, 100);
 }
+
 function stopSpeaking() { window.speechSynthesis.cancel(); }
 
 // 語音清單載入
@@ -613,6 +635,7 @@ function appendMsg(role, text, isVoice = false) {
 }
 
 function speakFromBtn(btn) {
+  warmUpTTS();
   const text = btn.closest('.msg-body').querySelector('.bubble').textContent;
   speakText(text);
 }
@@ -729,16 +752,20 @@ function resumeSession(id) {
       history.push({ role: 'user', content: t.user });
     }
     if (t.agent) {
-      // 只保留對話部分，不包含教練回饋
       const chatOnly = t.agent.includes('---COACH---') ? t.agent.split('---COACH---')[0].trim() : t.agent;
       history.push({ role: 'model', content: chatOnly });
     }
   });
 
+  // 更新標籤
+  document.getElementById('tag-lang').textContent  = LANG_META[lang]?.label || lang;
+  document.getElementById('tag-scene').textContent = SCENE_LABEL[scenario] || scenario;
+  document.getElementById('tag-level').textContent = LEVEL_LABEL[level]    || level;
+  document.getElementById('messages').innerHTML    = '';
+
   // 切到聊天畫面
   showPanel('chat');
-  document.getElementById('chat-model-badge').textContent = MODEL_LABEL[model] || model;
-  document.getElementById('messages').innerHTML = '';
+  setupMic();
 
   // 重新顯示對話
   s.turns.forEach(t => {
