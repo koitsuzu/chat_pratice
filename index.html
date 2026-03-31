@@ -61,8 +61,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .msg.user  .bubble { background: #e0f7fa; border-bottom-right-radius: 4px; }
 .tts-btn      { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.4; margin-top: 4px; align-self: flex-start; transition: opacity .15s; }
 .tts-btn:hover { opacity: 1; }
-.resume-btn   { background: #10b981; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
-.resume-btn:hover { background: #059669; }
 
 .coach-box    { margin-top: 8px; padding: 10px 14px; border-radius: 10px; background: linear-gradient(135deg, #fefce8, #fef9c3); border: 1px solid #fde68a; font-size: 13px; line-height: 1.7; color: #713f12; }
 .coach-title  { font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #92400e; }
@@ -561,12 +559,16 @@ function appendMsg(role, text, isVoice = false) {
   // 解析教練回饋（僅 Agent 訊息）
   let chatPart  = text;
   let coachHtml = '';
-  if (role === 'agent' && text.includes('---COACH---')) {
-    const parts = text.split('---COACH---');
-    chatPart = parts[0].trim();
-    const coachText = parts[1].trim();
-    if (coachText) {
-      coachHtml = `<div class="coach-box"><div class="coach-title">🎯 口說教練回饋</div>${esc(coachText).replace(/\n/g, '<br>')}</div>`;
+  if (role === 'agent') {
+    // 清理可能被 AI 原封輸出的標記
+    chatPart = chatPart.replace(/═+\s*PART\s*\d[^═]*═+/g, '').trim();
+    if (chatPart.includes('---COACH---')) {
+      const parts = chatPart.split('---COACH---');
+      chatPart = parts[0].trim();
+      const coachText = parts[1].trim();
+      if (coachText) {
+        coachHtml = `<div class="coach-box"><div class="coach-title">🎯 口說教練回饋</div>${esc(coachText).replace(/\n/g, '<br>')}</div>`;
+      }
     }
   }
 
@@ -616,17 +618,21 @@ const LS_KEY = 'speaking_agent_sessions';
 
 function saveSession(userMsg, agentMsg) {
   if (!userMsg) return;
-  // START_SESSION 也記錄（本地顯示為「開始對話」）
   if (userMsg === '(START_SESSION)') userMsg = '（開始對話）';
   const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
   if (!all[sessionId]) {
     all[sessionId] = {
-      id:       sessionId,
-      time:     new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
-      lang:     LANG_META[lang].label,
-      scenario: SCENE_LABEL[scenario] || scenario,
-      level:    LEVEL_LABEL[level]    || level,
-      turns:    []
+      id:          sessionId,
+      time:        new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+      lang:        LANG_META[lang].label,
+      scenario:    SCENE_LABEL[scenario] || scenario,
+      level:       LEVEL_LABEL[level]    || level,
+      modelKey:    model,
+      providerKey: provider,
+      langKey:     lang,
+      scenarioKey: scenario,
+      levelKey:    level,
+      turns:       []
     };
   }
   all[sessionId].turns.push({ user: userMsg, agent: agentMsg });
@@ -659,11 +665,9 @@ function showSessionDetail(id) {
   const body = document.getElementById('history-body');
 
   body.innerHTML = `
-    <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
-      <button class="back-btn" onclick="loadHistory()">← 返回列表</button>
-      <button class="resume-btn" onclick="resumeSession('${s.id}')">▶ 繼續對話</button>
-    </div>
-    <div style="font-size:13px;color:#aaa;margin-bottom:20px">${s.time} ｜ ${s.lang} ｜ ${s.scenario} ｜ ${s.level}｜ ${s.turns.length} 輪</div>
+    <button class="back-btn" onclick="loadHistory()" style="margin-bottom:16px">← 返回列表</button>
+    <div style="font-size:13px;color:#aaa;margin-bottom:12px">${s.time} ｜ ${s.lang} ｜ ${s.scenario} ｜ ${s.level}｜ ${s.turns.length} 輪</div>
+    <button class="send-btn" style="margin-bottom:20px;width:100%" onclick="resumeSession('${id}')">💬 繼續對話</button>
     ${s.turns.map((t, i) => `
       <div class="detail-turn">
         <div class="detail-label">🧑 第 ${i+1} 輪 — 你說</div>
@@ -682,25 +686,37 @@ function resumeSession(id) {
   const s   = all[id];
   if (!s) return;
 
-  // Restore state
-  sessionId = s.id;
-  history = [];
-  document.getElementById('messages').innerHTML = '';
+  // 還原設定
+  lang     = s.langKey     || 'en';
+  scenario = s.scenarioKey || 'daily';
+  level    = s.levelKey    || 'intermediate';
+  model    = s.modelKey    || 'gemini-2.5-flash';
+  provider = s.providerKey || (model.includes('llama') ? 'groq' : 'gemini');
 
-  // Re-render turns
+  // 還原對話歷史
+  history   = [];
+  sessionId = s.id;
   s.turns.forEach(t => {
-    history.push({ role: 'user', content: t.user });
-    if (t.user !== '（開始對話）') appendMsg('user', t.user);
-    
-    // Don't append empty agent msgs
-    if (t.agent && t.agent !== '(no reply)') {
-      history.push({ role: 'model', content: t.agent });
-      appendMsg('agent', t.agent);
+    if (t.user && t.user !== '（開始對話）') {
+      history.push({ role: 'user', content: t.user });
+    }
+    if (t.agent) {
+      // 只保留對話部分，不包含教練回饋
+      const chatOnly = t.agent.includes('---COACH---') ? t.agent.split('---COACH---')[0].trim() : t.agent;
+      history.push({ role: 'model', content: chatOnly });
     }
   });
 
-  // Switch to chat panel
+  // 切到聊天畫面
   showPanel('chat');
+  document.getElementById('chat-model-badge').textContent = MODEL_LABEL[model] || model;
+  document.getElementById('messages').innerHTML = '';
+
+  // 重新顯示對話
+  s.turns.forEach(t => {
+    if (t.user && t.user !== '（開始對話）') appendMsg('user', t.user);
+    if (t.agent) appendMsg('agent', t.agent);
+  });
 }
 </script>
 </body>
