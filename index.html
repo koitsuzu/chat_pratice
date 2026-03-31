@@ -344,6 +344,8 @@ function sendText() {
   if (!text || isSending) return;
   warmUpTTS();  // 手機解鎖 TTS
   input.value = '';
+  input.blur();                // 強制手機鍵盤更新
+  setTimeout(() => input.focus(), 50);
   appendMsg('user', text);
   history.push({ role: 'user', content: text });
   sendToGAS(text, true);
@@ -529,13 +531,18 @@ function speakText(text) {
     u.lang   = LANG_META[lang].ttsLang;
     u.rate   = LANG_META[lang].ttsRate;
 
-    // 套用選定的語音
+    // 套用選定的語音（找不到時 fallback 到該語言的第一個可用語音）
+    const voices = synth.getVoices();
+    const prefix = LANG_META[lang].ttsLang.split('-')[0].toLowerCase();
     const sel = document.getElementById('voice-select');
+    let picked = null;
     if (sel && sel.value) {
-      const voices = synth.getVoices();
-      const picked = voices.find(v => v.name === sel.value);
-      if (picked) u.voice = picked;
+      picked = voices.find(v => v.name === sel.value);
     }
+    if (!picked) {
+      picked = voices.find(v => (v.lang || '').replace(/_/g, '-').toLowerCase().startsWith(prefix));
+    }
+    if (picked) u.voice = picked;
 
     synth.speak(u);
 
@@ -762,6 +769,10 @@ function resumeSession(id) {
   document.getElementById('tag-scene').textContent = SCENE_LABEL[scenario] || scenario;
   document.getElementById('tag-level').textContent = LEVEL_LABEL[level]    || level;
   document.getElementById('messages').innerHTML    = '';
+
+  // 重新載入該語言的語音清單
+  currentVoiceLang = '';
+  loadVoices();
 
   // 切到聊天畫面
   showPanel('chat');
