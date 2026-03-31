@@ -584,6 +584,14 @@ function loadVoices() {
     sel.innerHTML = '<option>(無可用語音)</option>';
     return;
   }
+
+  // 本機語音排前面（手機上雲端語音可能無法使用）
+  filtered.sort((a, b) => {
+    if (a.localService && !b.localService) return -1;
+    if (!a.localService && b.localService) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
   filtered.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.name;
@@ -592,7 +600,7 @@ function loadVoices() {
       .replace(/Google /g, '')
       .replace(/Apple /g, '')
       .replace(/com\.apple\.speech\.synthesis\.voice\./g, '');
-    opt.textContent = shortName + (v.localService ? '' : ' ☁️');
+    opt.textContent = shortName + (v.localService ? '' : ' ☁️(需下載)');
     sel.appendChild(opt);
   });
 }
