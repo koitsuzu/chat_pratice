@@ -62,6 +62,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .tts-btn      { background: none; border: none; cursor: pointer; font-size: 14px; opacity: 0.4; margin-top: 4px; align-self: flex-start; transition: opacity .15s; }
 .tts-btn:hover { opacity: 1; }
 
+.coach-box    { margin-top: 8px; padding: 10px 14px; border-radius: 10px; background: linear-gradient(135deg, #fefce8, #fef9c3); border: 1px solid #fde68a; font-size: 13px; line-height: 1.7; color: #713f12; }
+.coach-title  { font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #92400e; }
+.coach-box br + br { display: none; }
+
 .typing-bubble { padding: 14px 16px !important; }
 .dot          { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c4b5fd; margin: 0 2px; animation: blink 1.2s infinite; }
 .dot:nth-child(2) { animation-delay: .2s; }
@@ -131,6 +135,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="lang-toggle" style="margin-bottom:24px">
     <button class="lang-btn on" data-lang="en" onclick="pickLang(this)">🇺🇸 英文</button>
     <button class="lang-btn"   data-lang="ja" onclick="pickLang(this)">🇯🇵 日文</button>
+  </div>
+
+  <div class="chip-group">
+    <div class="sec-title">AI 模型</div>
+    <div class="chip-row" id="model-chips">
+      <div class="chip on"  data-val="gemini-2.5-flash"  data-provider="gemini">⚡ Gemini 2.5 Flash</div>
+      <div class="chip"     data-val="gemini-2.5-pro"    data-provider="gemini">🧠 Gemini 2.5 Pro</div>
+      <div class="chip"     data-val="llama-3.3-70b-versatile" data-provider="groq">🦙 Groq Llama 3.3 70B</div>
+      <div class="chip"     data-val="llama-3.1-8b-instant"    data-provider="groq">💨 Groq Llama 3.1 8B</div>
+    </div>
   </div>
 
   <div class="chip-group">
@@ -220,6 +234,12 @@ const LANG_META = {
 };
 const SCENE_LABEL = { daily:'日常對話', travel:'旅遊情境', interview:'面試英文', business:'商務會議', free:'自由對話' };
 const LEVEL_LABEL = { beginner:'初級 🌱', intermediate:'中級 🔥', advanced:'高級 ⚡' };
+const MODEL_LABEL = {
+  'gemini-2.5-flash':'⚡ Gemini 2.5 Flash',
+  'gemini-2.5-pro':'🧠 Gemini 2.5 Pro',
+  'llama-3.3-70b-versatile':'🦙 Groq Llama 3.3 70B',
+  'llama-3.1-8b-instant':'💨 Groq Llama 3.1 8B'
+};
 
 // ════════════════════════════════════════════
 // STATE
@@ -227,6 +247,8 @@ const LEVEL_LABEL = { beginner:'初級 🌱', intermediate:'中級 🔥', advanc
 let lang          = 'en';
 let scenario      = 'daily';
 let level         = 'intermediate';
+let model         = 'gemini-2.5-flash';
+let provider      = 'gemini';
 let history       = [];
 let sessionId     = '';
 let isSending     = false;
@@ -254,6 +276,15 @@ function pickLang(btn) {
   btn.classList.add('on');
   lang = btn.dataset.lang;
 }
+
+document.querySelectorAll('#model-chips .chip').forEach(c => {
+  c.onclick = () => {
+    document.querySelectorAll('#model-chips .chip').forEach(x => x.classList.remove('on'));
+    c.classList.add('on');
+    model    = c.dataset.val;
+    provider = c.dataset.provider;
+  };
+});
 
 document.querySelectorAll('#scenario-chips .chip').forEach(c => {
   c.onclick = () => {
@@ -331,6 +362,8 @@ async function sendToGAS(userMsg, saveLocal) {
   try {
     const data = await gasPost('chat', {
       message:   userMsg,
+      model,
+      provider,
       history:   history.slice(-20),
       scenario,  level,
       language:  lang,
@@ -343,7 +376,10 @@ async function sendToGAS(userMsg, saveLocal) {
     appendMsg('agent', reply);
 
     if (saveLocal) saveSession(userMsg, reply);
-    if (document.getElementById('tts-on').checked) speakText(reply);
+    if (document.getElementById('tts-on').checked) {
+      const ttsText = reply.includes('---COACH---') ? reply.split('---COACH---')[0].trim() : reply;
+      speakText(ttsText);
+    }
 
   } catch(e) {
     removeTyping(tid);
@@ -408,7 +444,7 @@ async function sendAudio(blob, mimeType) {
       audioBase64: base64,
       mimeType,
       history:  history.slice(-20),
-      scenario, level,
+      scenario, level, model, provider,
       language: lang,
       sessionId
     });
@@ -425,7 +461,10 @@ async function sendAudio(blob, mimeType) {
     appendMsg('agent', reply);
 
     saveSession(transcript, reply);          // 存到 localStorage
-    if (document.getElementById('tts-on').checked) speakText(reply);
+    if (document.getElementById('tts-on').checked) {
+      const ttsText = reply.includes('---COACH---') ? reply.split('---COACH---')[0].trim() : reply;
+      speakText(ttsText);
+    }
 
   } catch(e) {
     removeTyping(tid);
@@ -472,11 +511,24 @@ function appendMsg(role, text, isVoice = false) {
     ? `<button class="tts-btn" onclick="speakFromBtn(this)" title="朗讀此訊息">🔊 朗讀</button>`
     : '';
 
+  // 解析教練回饋（僅 Agent 訊息）
+  let chatPart  = text;
+  let coachHtml = '';
+  if (role === 'agent' && text.includes('---COACH---')) {
+    const parts = text.split('---COACH---');
+    chatPart = parts[0].trim();
+    const coachText = parts[1].trim();
+    if (coachText) {
+      coachHtml = `<div class="coach-box"><div class="coach-title">🎯 口說教練回饋</div>${esc(coachText).replace(/\n/g, '<br>')}</div>`;
+    }
+  }
+
   div.innerHTML = `
     <div class="avatar">${role === 'agent' ? '🤖' : '🧑'}</div>
     <div class="msg-body">
       ${voiceTag}
-      <div class="bubble">${esc(text).replace(/\n/g, '<br>')}</div>
+      <div class="bubble">${esc(chatPart).replace(/\n/g, '<br>')}</div>
+      ${coachHtml}
       ${ttsBtn}
     </div>`;
   wrap.appendChild(div);
@@ -527,9 +579,6 @@ function saveSession(userMsg, agentMsg) {
       lang:     LANG_META[lang].label,
       scenario: SCENE_LABEL[scenario] || scenario,
       level:    LEVEL_LABEL[level]    || level,
-      langKey:     lang,
-      scenarioKey: scenario,
-      levelKey:    level,
       turns:    []
     };
   }
@@ -563,10 +612,7 @@ function showSessionDetail(id) {
   const body = document.getElementById('history-body');
 
   body.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <button class="back-btn" onclick="loadHistory()">← 返回列表</button>
-      <button class="start-btn" style="width:auto;padding:8px 20px;font-size:14px;border-radius:8px" onclick="resumeSession('${id}')">💬 繼續對話</button>
-    </div>
+    <button class="back-btn" onclick="loadHistory()" style="margin-bottom:16px">← 返回列表</button>
     <div style="font-size:13px;color:#aaa;margin-bottom:20px">${s.time} ｜ ${s.lang} ｜ ${s.scenario} ｜ ${s.level}｜ ${s.turns.length} 輪</div>
     ${s.turns.map((t, i) => `
       <div class="detail-turn">
@@ -579,53 +625,6 @@ function showSessionDetail(id) {
       </div>
     `).join('')}
   `;
-}
-
-// ════════════════════════════════════════════
-// 延續對話
-// ════════════════════════════════════════════
-function resumeSession(id) {
-  const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-  const s = all[id];
-  if (!s) return;
-
-  // 還原 session 狀態
-  sessionId = s.id;
-  lang     = s.langKey     || (s.lang && s.lang.includes('日文') ? 'ja' : 'en');
-  scenario = s.scenarioKey || Object.keys(SCENE_LABEL).find(k => SCENE_LABEL[k] === s.scenario) || 'free';
-  level    = s.levelKey    || Object.keys(LEVEL_LABEL).find(k => LEVEL_LABEL[k] === s.level) || 'intermediate';
-
-  // 重建 API 用的 history
-  history = [];
-  s.turns.forEach(t => {
-    if (t.user && t.user !== '（開始對話）') {
-      history.push({ role: 'user', content: t.user });
-    }
-    if (t.agent) {
-      history.push({ role: 'model', content: t.agent });
-    }
-  });
-
-  // 更新 header 標籤
-  document.getElementById('tag-lang').textContent  = LANG_META[lang].label;
-  document.getElementById('tag-scene').textContent = SCENE_LABEL[scenario] || scenario;
-  document.getElementById('tag-level').textContent = LEVEL_LABEL[level]    || level;
-
-  // 重建聊天訊息
-  const msgContainer = document.getElementById('messages');
-  msgContainer.innerHTML = '';
-  s.turns.forEach(t => {
-    if (t.user && t.user !== '（開始對話）') {
-      appendMsg('user', t.user);
-    }
-    if (t.agent) {
-      appendMsg('agent', t.agent);
-    }
-  });
-
-  // 切到聊天面板
-  showPanel('chat');
-  setupMic();
 }
 </script>
 </body>
