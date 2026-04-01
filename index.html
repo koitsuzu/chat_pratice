@@ -316,6 +316,7 @@ function pickLevel(btn) {
 function startSession() {
   sessionId = 'S' + Date.now();
   history   = [];
+  warmUpTTS();  // 手機解鎖 TTS，讓第一句能自動朗讀
 
   document.getElementById('tag-lang').textContent  = LANG_META[lang].label;
   document.getElementById('tag-scene').textContent = SCENE_LABEL[scenario] || scenario;
@@ -531,12 +532,17 @@ function speakText(text) {
     u.lang   = LANG_META[lang].ttsLang;
     u.rate   = LANG_META[lang].ttsRate;
 
-    // 套用選定的語音（「自動」模式不指定，讓瀏覽器用系統預設）
+    // 套用語音：手動選擇時用指定語音，「自動」時找該語言的第一個可用語音
     const sel = document.getElementById('voice-select');
+    const voices = synth.getVoices();
     if (sel && sel.value && sel.value !== '__auto__') {
-      const voices = synth.getVoices();
       const picked = voices.find(v => v.name === sel.value);
       if (picked) u.voice = picked;
+    } else if (voices.length) {
+      // 自動模式：找到該語言的語音，避免瀏覽器用系統語言（中文）
+      const prefix = LANG_META[lang].ttsLang.split('-')[0].toLowerCase();
+      const match = voices.find(v => (v.lang || '').replace(/_/g, '-').toLowerCase().startsWith(prefix));
+      if (match) u.voice = match;
     }
 
     synth.speak(u);
